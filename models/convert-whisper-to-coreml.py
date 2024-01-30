@@ -20,7 +20,7 @@ def linear_to_conv2d_map(state_dict, prefix, local_metadata, strict,
     """
     for k in state_dict:
         is_attention = all(substr in k for substr in ['attn', '.weight'])
-        is_mlp = any([k.endswith(s) for s in ['mlp.0.weight', 'mlp.2.weight']])
+        is_mlp = any(k.endswith(s) for s in ['mlp.0.weight', 'mlp.2.weight'])
 
         if (is_attention or is_mlp) and len(state_dict[k].shape) == 2:
             state_dict[k] = state_dict[k][:, :, None, None]
@@ -42,11 +42,10 @@ class LayerNormANE(LayerNormANEBase):
 class MultiHeadAttentionANE(MultiHeadAttention):
     def __init__(self, n_state: int, n_head: int):
         super().__init__(n_state, n_head)
-
-        setattr(self, 'query', nn.Conv2d(n_state, n_state, kernel_size=1))
-        setattr(self, 'key', nn.Conv2d(n_state, n_state, kernel_size=1, bias=False))
-        setattr(self, 'value', nn.Conv2d(n_state, n_state, kernel_size=1))
-        setattr(self, 'out', nn.Conv2d(n_state, n_state, kernel_size=1))
+        self.query =  nn.Conv2d(n_state, n_state, kernel_size=1)
+        self.key = nn.Conv2d(n_state, n_state, kernel_size=1, bias=False)
+        self.value = nn.Conv2d(n_state, n_state, kernel_size=1)
+        self.out = nn.Conv2d(n_state, n_state, kernel_size=1)
 
     def forward(self,
                 x: Tensor,
@@ -104,30 +103,28 @@ class MultiHeadAttentionANE(MultiHeadAttention):
 class ResidualAttentionBlockANE(ResidualAttentionBlock):
     def __init__(self, n_state: int, n_head: int, cross_attention: bool = False):
         super().__init__(n_state, n_head, cross_attention)
-
-        setattr(self, 'attn', MultiHeadAttentionANE(n_state, n_head))
-        setattr(self, 'attn_ln', LayerNormANE(n_state))
-
-        setattr(self, 'cross_attn', MultiHeadAttentionANE(n_state, n_head) if cross_attention else None)
-        setattr(self, 'cross_attn_ln', LayerNormANE(n_state) if cross_attention else None)
+        self.attn =  MultiHeadAttentionANE(n_state, n_head)
+        self.attn_ln = LayerNormANE(n_state)
+        self.cross_attn =  MultiHeadAttentionANE(n_state, n_head) if cross_attention else None
+        self.cross_attn_ln =  LayerNormANE(n_state) if cross_attention else None
 
         n_mlp = n_state * 4
-        setattr(self, 'mlp', nn.Sequential(
+        self.mlp =  nn.Sequential(
             nn.Conv2d(n_state, n_mlp, kernel_size=1),
             nn.GELU(),
             nn.Conv2d(n_mlp, n_state, kernel_size=1)
-        ))
-        setattr(self, 'mlp_ln', LayerNormANE(n_state))
+        )
+        self.mlp_ln = LayerNormANE(n_state)
 
 
 class AudioEncoderANE(AudioEncoder):
     def __init__(self, n_mels: int, n_ctx: int, n_state: int, n_head: int, n_layer: int):
         super().__init__(n_mels, n_ctx, n_state, n_head, n_layer)
 
-        setattr(self, 'blocks', nn.ModuleList(
+        self.blocks = nn.ModuleList(
             [ResidualAttentionBlockANE(n_state, n_head) for _ in range(n_layer)]
-        ))
-        setattr(self, 'ln_post', LayerNormANE(n_state))
+        )
+        self.ln_post = LayerNormANE(n_state)
 
     def forward(self, x: Tensor):
         """
@@ -146,20 +143,7 @@ class AudioEncoderANE(AudioEncoder):
             x = block(x)
 
         x = self.ln_post(x)
-
-        # """
-        # TODO:
-        # I think we need to transpose the result here to make it fit whisper.cpp memory order.
-        # However, even doing this, the results are still wrong. Kind of less wrong compared to
-        # not transposing, but still wrong.
-
-        # Also, I don't know why the original OpenAI implementation does not need to transpose
-
-        # transpose to (batch_size, n_ctx, n_state)
-        # x : torch.Tensor, shape = (batch_size, n_state, 1, n_ctx)
-
-        # """
-        # x = x.transpose(1,3)
+        x = x.squeeze(2).transpose(1, 2)
 
         return x
 
@@ -168,10 +152,10 @@ class TextDecoderANE(TextDecoder):
     def __init__(self, n_vocab: int, n_ctx: int, n_state: int, n_head: int, n_layer: int):
         super().__init__(n_vocab, n_ctx, n_state, n_head, n_layer)
 
-        setattr(self, 'blocks', nn.ModuleList(
+        self.blocks= nn.ModuleList(
             [ResidualAttentionBlockANE(n_state, n_head, cross_attention=True) for _ in range(n_layer)]
-        ))
-        setattr(self, 'ln', LayerNormANE(n_state))
+        )
+        self.ln= LayerNormANE(n_state)
 
     def forward(self, x: Tensor, xa: Tensor, kv_cache: Optional[dict] = None):
         """
@@ -197,7 +181,7 @@ class TextDecoderANE(TextDecoder):
         x = x.permute(0,2,3,1).squeeze(0)
 
         # ANE can only load tensors with dim size of at most 16,384 - whisper uses 51,864 (en) or 51,865 (multi-lang) tokens so we need to compute in chunks
-        if self.token_embedding.weight.shape[0] == 51865:
+        if self.token_embedding.weight.shape[0] >= 51865:
             # split in 11 chunks - 4715 each
             splits = self.token_embedding.weight.split(self.token_embedding.weight.shape[0]//11, dim=0)
             logits = torch.cat([torch.einsum('bid,jd->bij', x, split) for split in splits]).view(*x.shape[:2], -1)
@@ -213,20 +197,20 @@ class WhisperANE(Whisper):
     def __init__(self, dims: ModelDimensions):
         super().__init__(dims)
 
-        setattr(self, 'encoder', AudioEncoderANE(
+        self.encoder = AudioEncoderANE(
             self.dims.n_mels,
             self.dims.n_audio_ctx,
             self.dims.n_audio_state,
             self.dims.n_audio_head,
             self.dims.n_audio_layer,
-        ))
-        setattr(self, 'decoder', TextDecoderANE(
+        )
+        self.decoder = TextDecoderANE(
             self.dims.n_vocab,
             self.dims.n_text_ctx,
             self.dims.n_text_state,
             self.dims.n_text_head,
             self.dims.n_text_layer,
-        ))
+        )
 
         self._register_load_state_dict_pre_hook(linear_to_conv2d_map)
 
@@ -255,7 +239,7 @@ class WhisperANE(Whisper):
 def convert_encoder(hparams, model, quantize=False):
     model.eval()
 
-    input_shape = (1, 80, 3000)
+    input_shape = (1, hparams.n_mels, 3000)
     input_data = torch.randn(input_shape)
     traced_model = torch.jit.trace(model, input_data)
 
@@ -299,13 +283,13 @@ def convert_decoder(hparams, model, quantize=False):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--model", type=str, help="model to convert (e.g. tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, large)", required=True)
+    parser.add_argument("--model", type=str, help="model to convert (e.g. tiny, tiny.en, base, base.en, small, small.en, medium, medium.en, large-v1, large-v2, large-v3)", required=True)
     parser.add_argument("--encoder-only", type=bool, help="only convert encoder", default=False)
     parser.add_argument("--quantize",     type=bool, help="quantize weights to F16", default=False)
     parser.add_argument("--optimize-ane", type=bool, help="optimize for ANE execution (currently broken)", default=False)
     args = parser.parse_args()
 
-    if args.model not in ["tiny", "tiny.en", "base", "base.en", "small", "small.en", "medium", "medium.en", "large"]:
+    if args.model not in ["tiny", "tiny.en", "base", "base.en", "small", "small.en", "small.en-tdrz", "medium", "medium.en", "large-v1", "large-v2", "large-v3"]:
         raise ValueError("Invalid model name")
 
     whisper = load_model(args.model).cpu()

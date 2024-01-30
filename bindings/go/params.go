@@ -19,6 +19,10 @@ func (p *Params) SetTranslate(v bool) {
 	p.translate = toBool(v)
 }
 
+func (p *Params) SetSplitOnWord(v bool) {
+	p.split_on_word = toBool(v)
+}
+
 func (p *Params) SetNoContext(v bool) {
 	p.no_context = toBool(v)
 }
@@ -114,6 +118,16 @@ func (p *Params) SetMaxTokensPerSegment(n int) {
 	p.max_tokens = C.int(n)
 }
 
+// Set audio encoder context
+func (p *Params) SetAudioCtx(n int) {
+	p.audio_ctx = C.int(n)
+}
+
+// Set initial prompt
+func (p *Params) SetInitialPrompt(prompt string) {
+	p.initial_prompt = C.CString(prompt)
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // PRIVATE METHODS
 
@@ -137,6 +151,8 @@ func (p *Params) String() string {
 	str += fmt.Sprintf(" n_max_text_ctx=%d", p.n_max_text_ctx)
 	str += fmt.Sprintf(" offset_ms=%d", p.offset_ms)
 	str += fmt.Sprintf(" duration_ms=%d", p.duration_ms)
+	str += fmt.Sprintf(" audio_ctx=%d", p.audio_ctx)
+	str += fmt.Sprintf(" initial_prompt=%s", C.GoString(p.initial_prompt))
 	if p.translate {
 		str += " translate"
 	}
