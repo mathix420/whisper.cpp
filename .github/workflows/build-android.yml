@@ -62,7 +62,7 @@ jobs:
         MODEL: ${{github.event.inputs.model}} 
         LANG: ${{github.event.inputs.language}} 
       run:  |
-        cd examples/whisper.android
+        cd examples/whisper.android.java
         mkdir -p app/src/main/assets/models
         wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL -P app/src/main/assets/models
         sed -i "s/params.language.*/params.language = \"$LANG\";/" app/src/main/jni/whisper/jni.c
@@ -72,6 +72,6 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: whisper-android-example-${{github.event.inputs.language}}-${{github.event.inputs.model}}.zip
-        path: examples/whisper.android/app/build/outputs/apk
+        path: examples/whisper.android.java/app/build/outputs/apk
         retention-days: 90
 
