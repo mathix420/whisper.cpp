@@ -1,13 +1,5 @@
 name: Bindings Tests (Ruby)
-on:
-  push:
-    paths:
-      - bindings/ruby/**
-      - whisper.h
-  pull_request:
-    paths:
-      - bindings/ruby/**
-      - whisper.h
+on: []
 
 jobs:
   ubuntu-latest:

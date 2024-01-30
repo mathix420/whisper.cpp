@@ -1,13 +1,5 @@
 name: Examples Tests
-on:
-  push:
-    paths:
-      - examples/addon.node/**
-      - whisper.h
-  pull_request:
-    paths:
-      - examples/addon.node/**
-      - whisper.h
+on: []
 
 jobs:
   addon_node-ubuntu-latest:

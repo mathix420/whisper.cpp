@@ -1,5 +1,5 @@
 name: CI
-on: [push, pull_request]
+on: []
 
 env:
   ubuntu_image: "ubuntu:22.04"

@@ -46,16 +46,18 @@ jobs:
       with:
         fetch-depth: 0
 
-    - name: Setup Java
+    - name: set up JDK 11
       uses: actions/setup-java@v3
       with:
-        distribution: "temurin"
-        java-version: 17
-        # will restore cache of dependencies and wrappers
-        cache: 'gradle'
+        java-version: '11'
+        distribution: 'temurin'
+        cache: gradle
 
     - name: Setup Android SDK
       uses: android-actions/setup-android@v2
+      with:
+        api-level: 30
+        build-tools-version: 30.0.3
 
     - name: Build APP
       env:
@@ -66,6 +68,7 @@ jobs:
         mkdir -p app/src/main/assets/models
         wget https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-$MODEL -P app/src/main/assets/models
         sed -i "s/params.language.*/params.language = \"$LANG\";/" app/src/main/jni/whisper/jni.c
+        chmod +x ./gradlew
         ./gradlew assembleRelease --no-daemon
 
     - name: Upload artifact
@@ -74,4 +77,3 @@ jobs:
         name: whisper-android-example-${{github.event.inputs.language}}-${{github.event.inputs.model}}.zip
         path: examples/whisper.android.java/app/build/outputs/apk
         retention-days: 90
-
